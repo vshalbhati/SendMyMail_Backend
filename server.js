@@ -1,71 +1,3 @@
-// const express = require('express');
-// const SibApiV3Sdk = require('sib-api-v3-sdk');
-// const dotenv = require('dotenv');
-// const cors = require('cors');
-// const multer = require('multer');
-// const path = require('path');
-// const fs = require('fs');
-
-// dotenv.config();
-
-// const app = express();
-
-// app.use(cors());
-// app.use(express.json());
-
-// // Configure multer for file uploads
-// const upload = multer({ dest: 'uploads/' });
-
-// let defaultClient = SibApiV3Sdk.ApiClient.instance;
-// let apiKey = defaultClient.authentications['api-key'];
-// apiKey.apiKey = process.env.SENDINBLUE_API_KEY;
-
-// let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-
-// app.post('/api/send-emails', upload.single('attachment'), async (req, res) => {
-//   const { emails, template } = req.body;
-//   const attachment = req.file;
-
-//   let sentCount = 0;
-//   let failedEmails = [];
-
-//   for (let email of emails) {
-//     let sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-
-//     sendSmtpEmail.subject = template.subject;
-//     sendSmtpEmail.htmlContent = template.content;
-//     sendSmtpEmail.sender = { name: "Vishal Bhati", email: process.env.FROM_EMAIL };
-//     sendSmtpEmail.to = [{ email: email }];
-
-//     // Add attachment if present
-//     if (attachment) {
-//       sendSmtpEmail.attachment = [{
-//         content: fs.readFileSync(attachment.path).toString('base64'),
-//         name: attachment.originalname
-//       }];
-//     }
-
-//     try {
-//       await apiInstance.sendTransacEmail(sendSmtpEmail);
-//       sentCount++;
-//     } catch (error) {
-//       console.error(`Failed to send email to ${email}:`, error);
-//       failedEmails.push(email);
-//     }
-//   }
-
-//   // Clean up the uploaded file
-//   if (attachment) {
-//     fs.unlinkSync(attachment.path);
-//   }
-
-//   res.json({ sentCount, failedEmails });
-// });
-
-// const PORT = process.env.PORT || 3001;
-// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-
 const express = require('express');
 const SibApiV3Sdk = require('sib-api-v3-sdk');
 const dotenv = require('dotenv');
@@ -78,7 +10,19 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = ['http://localhost:3000'];
+
+app.use(cors({
+  origin: function(origin, callback){
+    if(!origin) return callback(null, true);
+    if(allowedOrigins.indexOf(origin) === -1){
+      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  }
+}));
+
 app.use(express.json());
 
 const upload = multer({ dest: 'uploads/' });
@@ -90,8 +34,19 @@ apiKey.apiKey = process.env.SENDINBLUE_API_KEY;
 let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 app.post('/api/send-emails', upload.single('attachment'), async (req, res) => {
-  const emails = JSON.parse(req.body.emails);
-  const template = JSON.parse(req.body.template);
+  console.log('Received request to send emails');
+  console.log('Request body:', req.body);
+  console.log('File:', req.file);
+
+  let emails, template;
+  try {
+    emails = JSON.parse(req.body.emails);
+    template = JSON.parse(req.body.template);
+  } catch (error) {
+    console.error('Error parsing request body:', error);
+    return res.status(400).json({ error: 'Invalid request body' });
+  }
+
   const attachment = req.file;
 
   let sentCount = 0;
@@ -105,7 +60,6 @@ app.post('/api/send-emails', upload.single('attachment'), async (req, res) => {
     sendSmtpEmail.sender = { name: "Vishal Bhati", email: process.env.FROM_EMAIL };
     sendSmtpEmail.to = [{ email: email }];
 
-    // Add attachment if present
     if (attachment) {
       sendSmtpEmail.attachment = [{
         content: fs.readFileSync(attachment.path).toString('base64'),
@@ -114,19 +68,21 @@ app.post('/api/send-emails', upload.single('attachment'), async (req, res) => {
     }
 
     try {
-      await apiInstance.sendTransacEmail(sendSmtpEmail);
+      console.log(`Attempting to send email to ${email}`);
+      const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
+      console.log(`Email sent successfully to ${email}`, result);
       sentCount++;
     } catch (error) {
-      console.error(`Failed to send email to ${email}:`, error);
+      console.error(`Failed to send email to ${email}:`, error.response ? error.response.text : error);
       failedEmails.push(email);
     }
   }
 
-  // Clean up the uploaded file
   if (attachment) {
     fs.unlinkSync(attachment.path);
   }
 
+  console.log(`Emails sent: ${sentCount}, Failed: ${failedEmails.length}`);
   res.json({ sentCount, failedEmails });
 });
 
